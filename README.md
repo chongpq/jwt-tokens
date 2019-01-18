@@ -1,2 +1,6 @@
-Things to do
-* sort out build - it need to copy https://github.com/gorilla/mux to $GOPATH
+Prerequites
+	* Docker 17.05 or higher - I've run this on Docker version 18.09.1, build 4c52b90
+
+Running 
+  * docker build -t paul/jwt .
+  * docker run --rm -p 8000:8000 paul/jwt > jwt.log &
