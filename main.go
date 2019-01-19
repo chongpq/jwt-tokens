@@ -9,12 +9,18 @@ import (
 	"net/http"
 	"fmt"
 	"strings"
+	"time"
 	"encoding/json"
 	jwt "github.com/dgrijalva/jwt-go"
 	"os"
 )
 
-var logins = make(map[string]string)
+type loginDetail struct {
+	Password  string
+	RefreshToken string
+}
+
+var logins = make(map[string]loginDetail)
 
 var jwtAuthentication = func(next http.Handler) http.Handler {
 
@@ -46,27 +52,31 @@ var jwtAuthentication = func(next http.Handler) http.Handler {
 
 		tokenPart := splitted[1] //Grab the token part, what we are truly interested in
 
-		token, err := jwt.Parse(tokenPart, func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.ParseWithClaims(tokenPart, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
 			return []byte(os.Getenv("token_password")), nil
 		})
 
 		if err != nil { //Malformed token, returns with http code 403 as usual
+			log.Println(err)
 			create403Response("Malformed authentication token", w)
 			return
 		}
 
-		if !token.Valid { //Token is invalid, maybe not signed on this server
+		if _, ok := token.Claims.(*jwt.StandardClaims); ok && token.Valid {
+			//Everything went well, proceed with the request
+			next.ServeHTTP(w, r) //proceed in the middleware chain!
+		} else { //Token is invalid, maybe not signed on this server
 			create403Response("Token is not valid.", w)
 			return
 		}
-
-		//Everything went well, proceed with the request
-		next.ServeHTTP(w, r) //proceed in the middleware chain!
 	});
 }
 
 func readCsv() {
-	csvFile, _ := os.Open("people.csv")
+	csvFile, err := os.Open("people.csv")
+	if err != nil {
+		log.Fatal(err)
+	}
 	reader := csv.NewReader(bufio.NewReader(csvFile))
 	for {
 		line, error := reader.Read()
@@ -75,7 +85,7 @@ func readCsv() {
 		} else if error != nil {
 			log.Fatal(error)
 		}
-		logins[line[0]] = line[1]
+		logins[line[0]] = loginDetail{ Password: line[1] }
 	}
 }
 
@@ -95,9 +105,13 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
 	w.Header().Add("Content-Type", "application/json")
-	if password, ok := logins[r.Form.Get("username")]; ok {
-		if password == r.Form.Get("password") {
-			token := jwt.New(jwt.GetSigningMethod("HS256"))
+	if loginDetail, ok := logins[r.Form.Get("username")]; ok {
+		if loginDetail.Password == r.Form.Get("password") {
+			claims := &jwt.StandardClaims{
+				    ExpiresAt: time.Now().Add(time.Minute * 1).Unix(),
+				    Audience:  r.Form.Get("username"),
+				}
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 			tokenString, _ := token.SignedString([]byte(os.Getenv("token_password")))
 			json.NewEncoder(w).Encode(map[string]interface{} {"status" : true, "message" : "Logged In", "token" : tokenString})
 		} else {
@@ -112,8 +126,8 @@ func main() {
 	readCsv()
 	r := mux.NewRouter()
 	//r.Headers("Content-Type", "application/json")
-	r.HandleFunc("/login", loginHandler)
-	r.HandleFunc("/", handler)
+	r.HandleFunc("/login", loginHandler).Methods("POST")
+	r.HandleFunc("/", handler).Methods("GET")
 
 	r.Use(jwtAuthentication)
 	log.Fatal(http.ListenAndServe(":8000",r))
