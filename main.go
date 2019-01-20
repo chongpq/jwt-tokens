@@ -13,9 +13,13 @@ import (
 	"github.com/chongpq/jwtAuth"
 )
 
-const TOKEN_SECRET = "TOKEN_SECRET"
+const (
+	TOKEN_SECRET = "TOKEN_SECRET"
+	ACCESS_TOKEN_DUR = time.Hour * 24
+	REFRESH_TOKEN_DUR = ACCESS_TOKEN_DUR * 7
+)
 
-var err403 = func (msg string, w http.ResponseWriter) {
+var processError = func (msg string, w http.ResponseWriter) {
 	w.WriteHeader(http.StatusForbidden)
 	w.Header().Add("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{} {"status" : false, "message" : msg})
@@ -28,13 +32,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 func refreshHandler(w http.ResponseWriter, r *http.Request) {
 	processToken := func(t *jwt.Token) {
+		w.Header().Add("Content-Type", "application/json")
 		if claim, ok := t.Claims.(*jwt.StandardClaims); ok && t.Valid {
-			w.Header().Add("Content-Type", "application/json")
 			if loginDetail, ok := login.Logins[claim.Audience]; ok {
 				if loginDetail.RefreshToken == t.Raw {
 					now := time.Now();
 					claims := &jwt.StandardClaims{
-							ExpiresAt: now.Add(time.Minute * 1).Unix(),
+							ExpiresAt: now.Add(ACCESS_TOKEN_DUR).Unix(),
 							Audience:  claim.Audience,
 						}
 					token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -50,10 +54,11 @@ func refreshHandler(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]interface{} {"status" : false, "message" : "Invalid login credentials. Please try again"})
 			}
 		} else { //Token is invalid, maybe not signed on this server
-			err403("Token is not valid.", w)
+			processError("Token is not valid.", w)
 		}
 	}
-	jwtAuth.ProcessAuthorizationHeader(w, r, processToken, err403)
+
+	jwtAuth.ProcessAuthorizationHeader(w, r, processToken, processError)
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
@@ -64,13 +69,13 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		if loginDetail.Password == r.Form.Get("password") {
 			now := time.Now();
 			claims := &jwt.StandardClaims{
-				    ExpiresAt: now.Add(time.Minute * 1).Unix(),
+				    ExpiresAt: now.Add(ACCESS_TOKEN_DUR).Unix(),
 				    Audience:  r.Form.Get("username"),
 				}
 			token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 			accessTokenString, _ := token.SignedString([]byte(os.Getenv(TOKEN_SECRET)))
 
-			claims.ExpiresAt = now.Add(time.Minute * 10).Unix()
+			claims.ExpiresAt = now.Add(REFRESH_TOKEN_DUR).Unix()
 			token = jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 			refreshTokenString, _ := token.SignedString([]byte(os.Getenv(TOKEN_SECRET)))
 			loginDetail.RefreshToken = refreshTokenString
@@ -89,7 +94,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	jwtAuth.JwtAuthExcludedList = []string{"/login","/refresh"}
 	jwtAuth.TOKEN_SECRET = os.Getenv(TOKEN_SECRET)
-	jwtAuth.ProcessErr = err403
+	jwtAuth.ProcessErr = processError
 	login.ReadCsv()
 	r := mux.NewRouter()
 	r.HandleFunc("/refresh", refreshHandler).Methods("POST")
