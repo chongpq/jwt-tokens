@@ -1,9 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"encoding/csv"
-	"io"
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
@@ -12,16 +9,9 @@ import (
 	"time"
 	"encoding/json"
 	jwt "github.com/dgrijalva/jwt-go"
-	"golang.org/x/crypto/bcrypt"
 	"os"
+	"github.com/chongpq/login"
 )
-
-type loginDetail struct {
-	Password  string
-	RefreshToken string
-}
-
-var logins = make(map[string]loginDetail)
 
 var jwtAuthentication = func(next http.Handler) http.Handler {
 
@@ -79,23 +69,6 @@ func authorizationHeaderCheck(w http.ResponseWriter, r *http.Request, callback f
 	callback(token)
 }
 
-func readCsv() {
-	csvFile, err := os.Open("people.csv")
-	if err != nil {
-		log.Fatal(err)
-	}
-	reader := csv.NewReader(bufio.NewReader(csvFile))
-	for {
-		line, error := reader.Read()
-		if error == io.EOF {
-			break
-		} else if error != nil {
-			log.Fatal(error)
-		}
-		logins[line[0]] = loginDetail{ Password: line[1] }
-	}
-}
-
 func create403Response(msg string, w http.ResponseWriter) {
 	w.WriteHeader(http.StatusForbidden)
 	w.Header().Add("Content-Type", "application/json")
@@ -112,13 +85,8 @@ func refreshHandler(w http.ResponseWriter, r *http.Request) {
 	a := func(t *jwt.Token) {
 		if claim, ok := t.Claims.(*jwt.StandardClaims); ok && t.Valid {
 			w.Header().Add("Content-Type", "application/json")
-			if loginDetail, ok := logins[claim.Audience]; ok {
-			fmt.Println(claim.Audience)
-			fmt.Println(loginDetail)
-			fmt.Println(t.Raw)
-				hashedRefreshToken, _  := bcrypt.GenerateFromPassword([]byte(t.Raw), bcrypt.DefaultCost)
-			fmt.Println(string(hashedRefreshToken))
-				if loginDetail.RefreshToken == t.Raw { //string(hashedRefreshToken) {
+			if loginDetail, ok := login.Logins[claim.Audience]; ok {
+				if loginDetail.RefreshToken == t.Raw {
 					now := time.Now();
 					claims := &jwt.StandardClaims{
 							ExpiresAt: now.Add(time.Minute * 1).Unix(),
@@ -148,7 +116,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 
 	w.Header().Add("Content-Type", "application/json")
-	if loginDetail, ok := logins[r.Form.Get("username")]; ok {
+	if loginDetail, ok := login.Logins[r.Form.Get("username")]; ok {
 		if loginDetail.Password == r.Form.Get("password") {
 			now := time.Now();
 			claims := &jwt.StandardClaims{
@@ -161,9 +129,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 			claims.ExpiresAt = now.Add(time.Minute * 10).Unix()
 			token = jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 			refreshTokenString, _ := token.SignedString([]byte(os.Getenv("secret")))
-			//hashedRefreshTokenString, _ := bcrypt.GenerateFromPassword([]byte(refreshTokenString), bcrypt.DefaultCost)
-			loginDetail.RefreshToken = refreshTokenString //string(hashedRefreshTokenString)
-			logins[r.Form.Get("username")] = loginDetail
+			loginDetail.RefreshToken = refreshTokenString
+			login.Logins[r.Form.Get("username")] = loginDetail
 			json.NewEncoder(w).Encode(map[string]interface{} {"status" : true, "message" : "Logged In", "access_token" : accessTokenString, "refresh_token" : refreshTokenString})
 		} else {
 			w.WriteHeader(http.StatusForbidden)
@@ -176,7 +143,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	readCsv()
+	login.ReadCsv()
 	r := mux.NewRouter()
 	//r.Headers("Content-Type", "application/json")
 	r.HandleFunc("/refresh", refreshHandler).Methods("POST")
