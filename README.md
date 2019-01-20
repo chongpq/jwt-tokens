@@ -10,6 +10,7 @@ You can obviousely change your TOKEN_SERCRET, the port sxposed on the host or lo
 ```docker run --rm -e TOKEN_SECRET=<TOKEN_SECRET> -p <host port>:8000 paul/jwt > <log name/location> &```
 
 Notes
+
 This project implements a oauth 2.0 like authorization. The /login and /refresh endpoints being the authorization server and the / the resource server. I'm using the claims audience field to store the email address of the user.
 
 The /login endpoint requires a POST and the username and password passed as form parameters.
