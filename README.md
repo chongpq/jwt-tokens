@@ -1,4 +1,4 @@
-Prerequites
+Prerequisites
   * Docker 17.05 or higher - I've run this on Docker version 18.09.1, build 4c52b90
 
 Running 
