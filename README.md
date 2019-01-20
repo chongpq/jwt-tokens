@@ -3,4 +3,4 @@ Prerequites
 
 Running 
   * docker build -t paul/jwt .
-  * docker run --rm -p 8000:8000 paul/jwt > jwt.log &
+  * docker run --rm -e TOKEN_SECRET='secret' -p 8000:8000 paul/jwt > jwt.log &
