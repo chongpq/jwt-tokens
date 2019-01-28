@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/gorilla/mux"
+	"github.com/gorilla/handlers"
 	"log"
 	jwt "github.com/dgrijalva/jwt-go"
 	"net/http"
@@ -101,6 +102,8 @@ func main() {
 	r.HandleFunc("/login", loginHandler).Methods("POST")
 	r.HandleFunc("/", handler).Methods("GET")
 	r.Use(jwtAuth.JwtAuthentication)
-
-	log.Fatal(http.ListenAndServe(":8000",r))
+	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With"})
+	originsOk := handlers.AllowedOrigins([]string{"*"})
+	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
+	log.Fatal(http.ListenAndServe(":8000", handlers.CORS(originsOk, headersOk, methodsOk)(r)))
 }
